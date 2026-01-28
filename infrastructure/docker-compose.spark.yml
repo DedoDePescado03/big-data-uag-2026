@@ -1,0 +1,100 @@
+version: '3.8'
+
+# =============================================================================
+# Docker Compose para Cluster Spark Local
+# Big Data UAG 2026 - AWS Academy Data Engineering
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Spark Master - Nodo coordinador del cluster
+  # ---------------------------------------------------------------------------
+  spark-master:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark-master
+    hostname: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    ports:
+      - "8080:8080"   # Spark Master Web UI
+      - "7077:7077"   # Spark Master Port
+    volumes:
+      - ../data:/data:rw
+      - ../labs:/labs:rw
+      - ../src:/src:rw
+    networks:
+      - spark-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Spark Worker - Nodo de procesamiento
+  # ---------------------------------------------------------------------------
+  spark-worker:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    container_name: spark-worker
+    hostname: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - SPARK_WORKER_WEBUI_PORT=8081
+    ports:
+      - "8081:8081"   # Spark Worker Web UI
+    volumes:
+      - ../data:/data:rw
+      - ../labs:/labs:rw
+      - ../src:/src:rw
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - spark-network
+
+  # ---------------------------------------------------------------------------
+  # Jupyter Lab - Entorno de desarrollo interactivo
+  # ---------------------------------------------------------------------------
+  jupyter:
+    build:
+      context: ./jupyter
+      dockerfile: Dockerfile
+    container_name: jupyter-spark
+    hostname: jupyter
+    environment:
+      - SPARK_MASTER=spark://spark-master:7077
+      - PYSPARK_DRIVER_PYTHON=jupyter
+      - PYSPARK_DRIVER_PYTHON_OPTS=lab
+      - JUPYTER_ENABLE_LAB=yes
+    ports:
+      - "8888:8888"   # Jupyter Lab
+      - "4040:4040"   # Spark Application UI
+    volumes:
+      - ../data:/home/jovyan/data:rw
+      - ../labs:/home/jovyan/labs:rw
+      - ../src:/home/jovyan/src:rw
+    depends_on:
+      - spark-master
+      - spark-worker
+    networks:
+      - spark-network
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+
+networks:
+  spark-network:
+    driver: bridge
+    name: bigdata-spark-network
+
+volumes:
+  spark-data:
+    name: bigdata-spark-data
